@@ -1,0 +1,10 @@
+# Hardened Debian 12 style sshd_config
+Include /etc/ssh/sshd_config.d/*.conf
+
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+MaxAuthTries 3
+X11Forwarding no
+UsePAM yes
+Subsystem sftp /usr/lib/openssh/sftp-server

@@ -1,0 +1,43 @@
+# PAM controls. Debian and Ubuntu use common-*; Rocky and RHEL use system-auth and
+# password-auth. Each check covers every listed file that exists on the host.
+rules:
+  - id: PAM-001
+    title: pam_unix does not accept empty passwords (nullok)
+    severity: high
+    rationale: With nullok, an account whose password field is empty can log in with no password.
+    fix: Remove the nullok argument from every pam_unix.so line.
+    check:
+      kind: pam_module
+      files:
+        - /etc/pam.d/common-auth
+        - /etc/pam.d/common-password
+        - /etc/pam.d/system-auth
+        - /etc/pam.d/password-auth
+      module: pam_unix.so
+      forbid_args: [nullok]
+  - id: PAM-002
+    title: New passwords are checked for strength (pam_pwquality)
+    severity: medium
+    rationale: Without a strength check, users can set short or dictionary passwords.
+    fix: >
+      Add "password requisite pam_pwquality.so retry=3" before pam_unix.so in the password
+      stack (on Debian and Ubuntu, install libpam-pwquality).
+    check:
+      kind: pam_module
+      files: [/etc/pam.d/common-password, /etc/pam.d/system-auth, /etc/pam.d/password-auth]
+      module: pam_pwquality.so
+      types: [password]
+      required: true
+  - id: PAM-003
+    title: Failed logins lock the account for a while (pam_faillock)
+    severity: medium
+    rationale: Locking after repeated failures stops online password guessing.
+    fix: >
+      Add pam_faillock.so preauth and authfail lines to the auth stack (on Rocky,
+      authselect enable-feature with-faillock).
+    check:
+      kind: pam_module
+      files: [/etc/pam.d/common-auth, /etc/pam.d/system-auth, /etc/pam.d/password-auth]
+      module: pam_faillock.so
+      types: [auth]
+      required: true

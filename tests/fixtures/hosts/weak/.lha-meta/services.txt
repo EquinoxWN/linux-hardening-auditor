@@ -1,0 +1,4 @@
+cron.service              loaded active running Regular background program processing daemon
+ssh.service               loaded active running OpenBSD Secure Shell server
+avahi-daemon.service      loaded active running Avahi mDNS/DNS-SD Stack
+telnet.socket             loaded active listening Telnet Server Activation Socket

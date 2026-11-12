@@ -1,0 +1,7 @@
+# Debian cloud image with a cloud-init drop-in read first
+Include /etc/ssh/sshd_config.d/*.conf
+
+PermitRootLogin no
+PermitEmptyPasswords yes
+X11Forwarding yes
+UsePAM yes

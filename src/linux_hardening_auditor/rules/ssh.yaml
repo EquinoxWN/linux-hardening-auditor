@@ -1,0 +1,65 @@
+# OpenSSH server controls. Values are the effective global setting: the first value sshd reads
+# wins, Include files are read in place, and options inside Match blocks are not global.
+rules:
+  - id: SSH-001
+    title: Root cannot log in over SSH
+    severity: high
+    rationale: >
+      A direct root login gives an attacker who guesses or steals one credential full control,
+      and leaves no record of which person used it.
+    fix: Set "PermitRootLogin no" before any drop-in that sets it, then reload sshd.
+    check:
+      kind: sshd_option
+      option: PermitRootLogin
+      expect: {equals: "no"}
+      default: prohibit-password
+  - id: SSH-002
+    title: SSH password logins are disabled
+    severity: medium
+    rationale: Password logins can be brute-forced from the internet; key-based logins cannot be guessed.
+    fix: Set "PasswordAuthentication no" once every user has a key, then reload sshd.
+    check:
+      kind: sshd_option
+      option: PasswordAuthentication
+      expect: {equals: "no"}
+      default: "yes"
+  - id: SSH-003
+    title: Empty passwords are refused over SSH
+    severity: critical
+    rationale: An account with an empty password could log in with no secret at all.
+    fix: Set "PermitEmptyPasswords no" (the sshd default) and remove the override.
+    check:
+      kind: sshd_option
+      option: PermitEmptyPasswords
+      expect: {equals: "no"}
+      default: "no"
+  - id: SSH-004
+    title: X11 forwarding is disabled
+    severity: low
+    rationale: X11 forwarding exposes the client's display to the server; servers rarely need it.
+    fix: Set "X11Forwarding no" in sshd_config or in the drop-in that enables it.
+    check:
+      kind: sshd_option
+      option: X11Forwarding
+      expect: {equals: "no"}
+      default: "no"
+  - id: SSH-005
+    title: SSH allows at most 4 authentication attempts per connection
+    severity: medium
+    rationale: Fewer attempts per connection slow down password guessing.
+    fix: Set "MaxAuthTries 4" (or lower).
+    check:
+      kind: sshd_option
+      option: MaxAuthTries
+      expect: {max: 4}
+      default: 6
+  - id: SSH-006
+    title: Host-based SSH authentication is disabled
+    severity: medium
+    rationale: Host-based trust lets any user on a trusted host log in without a key of their own.
+    fix: Set "HostbasedAuthentication no" (the sshd default).
+    check:
+      kind: sshd_option
+      option: HostbasedAuthentication
+      expect: {equals: "no"}
+      default: "no"

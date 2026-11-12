@@ -1,0 +1,39 @@
+# sudo controls. sudoers is read in sudo's order with include and includedir; files in an
+# includedir whose name contains a dot or ends in ~ are skipped, as sudo skips them.
+rules:
+  - id: SUDO-001
+    title: No sudo rule skips the password (NOPASSWD)
+    severity: high
+    rationale: >
+      NOPASSWD turns any code running as that user, such as a compromised service or a stolen
+      session, into root without a second check.
+    fix: Remove the NOPASSWD tag, or limit it to the exact commands an automation needs.
+    check:
+      kind: sudoers
+      forbid_tags: [NOPASSWD]
+  - id: SUDO-002
+    title: sudo runs commands in a pseudo-terminal (use_pty)
+    severity: medium
+    rationale: >
+      Without a pseudo-terminal, a background process started through sudo can keep access to
+      the user's terminal after the command ends.
+    fix: Add "Defaults use_pty" to /etc/sudoers with visudo.
+    check:
+      kind: sudoers
+      require_defaults: [use_pty]
+  - id: SUDO-003
+    title: sudo keeps its own log file
+    severity: low
+    rationale: A dedicated log makes it easy to review who ran what as root.
+    fix: Add "Defaults logfile=/var/log/sudo.log" to /etc/sudoers with visudo.
+    check:
+      kind: sudoers
+      require_defaults: [logfile]
+  - id: SUDO-004
+    title: sudo does not accept passwords on a visible terminal (visiblepw)
+    severity: medium
+    rationale: With visiblepw, sudo prompts for a password even when it would be echoed or logged.
+    fix: Remove "Defaults visiblepw" (sudo's default is off).
+    check:
+      kind: sudoers
+      forbid_defaults: [visiblepw]

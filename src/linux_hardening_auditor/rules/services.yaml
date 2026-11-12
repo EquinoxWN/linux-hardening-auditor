@@ -1,0 +1,34 @@
+# Services and sockets that should not run on a server (systemd units, running or listening).
+rules:
+  - id: SVC-001
+    title: Telnet server is not running
+    severity: high
+    rationale: Telnet sends passwords and whole sessions in clear text.
+    fix: systemctl disable --now telnet.socket (or inetutils-inetd) and use SSH instead.
+    check:
+      kind: services_not_running
+      units: [telnet.socket, inetutils-inetd.service]
+  - id: SVC-002
+    title: rsh, rlogin and rexec servers are not running
+    severity: high
+    rationale: The r-services trust host names and send credentials in clear text.
+    fix: systemctl disable --now rsh.socket rlogin.socket rexec.socket.
+    check:
+      kind: services_not_running
+      units: [rsh.socket, rlogin.socket, rexec.socket]
+  - id: SVC-003
+    title: Avahi (mDNS) is not running
+    severity: low
+    rationale: mDNS advertises the host and its services to the local network; servers do not need it.
+    fix: systemctl disable --now avahi-daemon.socket avahi-daemon.service.
+    check:
+      kind: services_not_running
+      units: [avahi-daemon.service, avahi-daemon.socket]
+  - id: SVC-004
+    title: FTP server is not running
+    severity: medium
+    rationale: Plain FTP sends credentials in clear text; use SFTP over SSH instead.
+    fix: systemctl disable --now vsftpd.service.
+    check:
+      kind: services_not_running
+      units: [vsftpd.service]

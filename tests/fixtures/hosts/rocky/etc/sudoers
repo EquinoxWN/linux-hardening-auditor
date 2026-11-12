@@ -1,0 +1,10 @@
+Defaults   !visiblepw
+Defaults   always_set_home
+Defaults   use_pty
+Defaults   logfile=/var/log/sudo.log
+Defaults   env_keep += "LANG LC_ALL"
+
+root    ALL=(ALL)       ALL
+%wheel  ALL=(ALL)       ALL
+
+#includedir /etc/sudoers.d

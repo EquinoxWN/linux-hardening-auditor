@@ -1,0 +1,4 @@
+# systemctl list-units --type=service,socket --state=running,listening --no-legend --plain
+cron.service              loaded active running Regular background program processing daemon
+ssh.service               loaded active running OpenBSD Secure Shell server
+systemd-journald.socket   loaded active running Journal Socket

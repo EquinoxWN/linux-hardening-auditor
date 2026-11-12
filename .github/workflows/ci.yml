@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the workflow can read the code and nothing else.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Every action is pinned to a full commit SHA.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: make ci
+      - name: Known-vulnerability audit
+        run: make audit
+      - name: Fixture audits (annotation)
+        run: |
+          for host in hardened weak rocky; do
+            line=$(lha audit --fixture "tests/fixtures/hosts/$host" | tail -n 1)
+            echo "::notice title=lha audit fixture $host::$line"
+          done
+
+  # Read-only audit of the CI runner itself (a real Ubuntu host). Run as root so /etc/sudoers
+  # can be read. Failed controls are expected on a runner; only exit 2 or 3 fails the job.
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: python -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
+      - name: Live test (pytest -m live, as root)
+        run: sudo .venv/bin/python -m pytest -q -m live -p no:cacheprovider
+      - name: Audit the runner (annotation)
+        run: |
+          set +e
+          sudo .venv/bin/lha audit --local --json live.json > live.txt
+          code=$?
+          set -e
+          cat live.txt
+          echo "::notice title=lha audit --local on ubuntu-latest (exit $code)::$(tail -n 1 live.txt)"
+          if [ "$code" -ge 2 ]; then echo "::error title=lha audit --local::exit $code"; exit 1; fi

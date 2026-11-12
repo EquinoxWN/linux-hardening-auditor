@@ -1,0 +1,67 @@
+# Permissions and ownership of sensitive files. max_mode is the most permissive mode allowed:
+# any bit outside it fails the control.
+rules:
+  - id: PERM-001
+    title: /etc/shadow is not readable by other users
+    severity: high
+    rationale: /etc/shadow holds password hashes, which can be cracked offline.
+    fix: chown root:shadow /etc/shadow (root:root on Rocky) and chmod 0640 /etc/shadow.
+    check:
+      kind: file_mode
+      path: /etc/shadow
+      max_mode: "0640"
+      uid: 0
+  - id: PERM-002
+    title: /etc/passwd is writable only by root
+    severity: medium
+    rationale: Anyone who can write /etc/passwd can add a user with uid 0.
+    fix: chown root:root /etc/passwd and chmod 0644 /etc/passwd.
+    check:
+      kind: file_mode
+      path: /etc/passwd
+      max_mode: "0644"
+      uid: 0
+      gid: 0
+  - id: PERM-003
+    title: sshd_config is readable only by root
+    severity: medium
+    rationale: The server configuration reveals which logins and features are allowed.
+    fix: chown root:root /etc/ssh/sshd_config and chmod 0600 /etc/ssh/sshd_config.
+    check:
+      kind: file_mode
+      path: /etc/ssh/sshd_config
+      max_mode: "0600"
+      uid: 0
+      gid: 0
+  - id: PERM-004
+    title: /etc/sudoers is read-only and owned by root
+    severity: high
+    rationale: Anyone who can write sudoers can grant themselves root.
+    fix: chown root:root /etc/sudoers and chmod 0440 /etc/sudoers.
+    check:
+      kind: file_mode
+      path: /etc/sudoers
+      max_mode: "0440"
+      uid: 0
+      gid: 0
+  - id: PERM-005
+    title: /etc/gshadow is not readable by other users
+    severity: medium
+    rationale: /etc/gshadow holds group password hashes and the group administrators.
+    fix: chown root:shadow /etc/gshadow (root:root on Rocky) and chmod 0640 /etc/gshadow.
+    check:
+      kind: file_mode
+      path: /etc/gshadow
+      max_mode: "0640"
+      uid: 0
+  - id: PERM-006
+    title: /etc/crontab is readable only by root
+    severity: low
+    rationale: The system crontab shows which privileged jobs run and when.
+    fix: chown root:root /etc/crontab and chmod 0600 /etc/crontab.
+    check:
+      kind: file_mode
+      path: /etc/crontab
+      max_mode: "0600"
+      uid: 0
+      gid: 0

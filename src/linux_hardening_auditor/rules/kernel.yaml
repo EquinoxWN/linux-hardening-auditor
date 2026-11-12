@@ -1,0 +1,56 @@
+# Running kernel parameters, read from /proc/sys (the value in effect now, not the one on disk).
+rules:
+  - id: KERN-001
+    title: IPv4 forwarding is off
+    severity: medium
+    rationale: A host that forwards packets can be used to route traffic between networks.
+    fix: Set net.ipv4.ip_forward = 0 in /etc/sysctl.d/ and run sysctl --system (not on routers).
+    check:
+      kind: sysctl
+      key: net.ipv4.ip_forward
+      expect: {equals: 0}
+  - id: KERN-002
+    title: Full address space layout randomisation is on
+    severity: high
+    rationale: ASLR makes memory corruption exploits much harder to write reliably.
+    fix: Set kernel.randomize_va_space = 2 in /etc/sysctl.d/.
+    check:
+      kind: sysctl
+      key: kernel.randomize_va_space
+      expect: {equals: 2}
+  - id: KERN-003
+    title: ICMP redirects are ignored
+    severity: medium
+    rationale: Accepting redirects lets a host on the local network change this host's routes.
+    fix: Set net.ipv4.conf.all.accept_redirects = 0 in /etc/sysctl.d/.
+    check:
+      kind: sysctl
+      key: net.ipv4.conf.all.accept_redirects
+      expect: {equals: 0}
+  - id: KERN-004
+    title: TCP SYN cookies are on
+    severity: medium
+    rationale: SYN cookies keep the host reachable during a SYN flood.
+    fix: Set net.ipv4.tcp_syncookies = 1 in /etc/sysctl.d/.
+    check:
+      kind: sysctl
+      key: net.ipv4.tcp_syncookies
+      expect: {equals: 1}
+  - id: KERN-005
+    title: Set-uid programs do not write core dumps
+    severity: medium
+    rationale: A core dump of a privileged program can contain secrets such as password hashes.
+    fix: Set fs.suid_dumpable = 0 in /etc/sysctl.d/.
+    check:
+      kind: sysctl
+      key: fs.suid_dumpable
+      expect: {equals: 0}
+  - id: KERN-006
+    title: Reverse path filtering is strict
+    severity: medium
+    rationale: Strict reverse path filtering drops spoofed packets that arrive on the wrong interface.
+    fix: Set net.ipv4.conf.all.rp_filter = 1 in /etc/sysctl.d/.
+    check:
+      kind: sysctl
+      key: net.ipv4.conf.all.rp_filter
+      expect: {equals: 1}

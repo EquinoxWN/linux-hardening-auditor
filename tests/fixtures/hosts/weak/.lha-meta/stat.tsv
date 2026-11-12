@@ -1,0 +1,6 @@
+# mode	uid	gid	path
+644	0	42	/etc/shadow
+644	0	0	/etc/passwd
+644	0	0	/etc/ssh/sshd_config
+440	0	0	/etc/sudoers
+644	0	0	/etc/crontab
