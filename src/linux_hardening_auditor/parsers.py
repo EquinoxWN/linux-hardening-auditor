@@ -137,6 +137,7 @@ class Sudoers:
     rules: list[SudoRule] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
     scoped_no_auth: list[Setting] = field(default_factory=list)
+    unparsed_no_auth: list[Setting] = field(default_factory=list)
 
 
 def split_defaults(body: str) -> list[tuple[str, bool, str]]:
@@ -232,18 +233,83 @@ def _sudo_file(host: Host, path: str, result: Sudoers, depth: int) -> None:
             continue
         if not line or line.startswith("#"):
             continue
-        head = line.split(None, 1)
-        if head[0] == "Defaults":
-            for name, negated, value in split_defaults(head[1] if len(head) > 1 else ""):
+        raw_body = line[len("Defaults") :] if line.startswith("Defaults") else ""
+        line = strip_comment(line)
+        rest = line[len("Defaults") :]
+        if line.startswith("Defaults") and (not rest or rest[0].isspace()):
+            entries = split_defaults(rest)
+            for name, negated, value in entries:
                 result.defaults[name] = Setting("!" if negated else (value or "on"), path, number)
+            _fail_safe(raw_body, entries, result, Setting("!", path, number))
             continue
-        if head[0].startswith("Defaults"):
+        if line.startswith("Defaults") and rest[:1] in (":", "@", ">", "!"):
             # scoped Defaults (Defaults:user, @host, >runas, !cmnd) are not global settings,
             # but a scoped !authenticate still lets those users skip the password
-            for name, negated, _ in split_defaults(head[1] if len(head) > 1 else ""):
-                if name == "authenticate" and negated:
-                    result.scoped_no_auth.append(Setting("!", path, number))
+            _, body = split_scope(rest[1:])
+            entries = split_defaults(body)
+            if any(name == "authenticate" and negated for name, negated, _ in entries):
+                result.scoped_no_auth.append(Setting("!", path, number))
+            _fail_safe(raw_body, entries, result, Setting("!", path, number))
             continue
-        if head[0].endswith("_Alias"):
+        if line.split(None, 1)[0].endswith("_Alias"):
             continue  # aliases are not rules
         result.rules.append(SudoRule(line, path, number))
+
+
+_NOT_AUTHENTICATE = re.compile(r"(?<![\w])!\s*authenticate\b")
+
+
+def _fail_safe(
+    raw_body: str, entries: list[tuple[str, bool, str]], result: Sudoers, where: Setting
+) -> None:
+    """Flag a `!authenticate` token the parse did not turn into a negated entry."""
+    parsed = any(name == "authenticate" and negated for name, negated, _ in entries)
+    if not parsed and _NOT_AUTHENTICATE.search(raw_body):
+        result.unparsed_no_auth.append(where)
+
+
+def strip_comment(line: str) -> str:
+    """Drop a trailing `#` comment: outside quotes, after whitespace, not a `#uid`."""
+    quoted = escaped = after_space = False
+    for i, ch in enumerate(line):
+        if escaped:
+            escaped = after_space = False
+            continue
+        if ch == "\\":
+            escaped = True
+        elif ch == '"':
+            quoted = not quoted
+        elif ch == "#" and not quoted and after_space and not line[i + 1 : i + 2].isdigit():
+            return line[:i].rstrip()
+        after_space = ch.isspace() and not quoted
+    return line
+
+
+def split_scope(rest: str) -> tuple[str, str]:
+    """Split `binding entries` after `Defaults:`/`@`/`>`/`!` the way sudo's grammar does.
+
+    The binding list runs over `, ` continuations, quoted strings and backslash escapes, and
+    ends at the first whitespace that is neither next to a comma nor quoted or escaped.
+    """
+    quoted = escaped = False
+    i, n = 0, len(rest)
+    while i < n:
+        ch = rest[i]
+        if escaped:
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == '"':
+            quoted = not quoted
+        elif ch.isspace() and not quoted:
+            j = i
+            while j < n and rest[j].isspace():
+                j += 1
+            if rest[:i].rstrip().endswith(",") or rest[j : j + 1] == ",":
+                i = j
+                continue
+            return rest[:i], rest[j:]
+        i += 1
+    if quoted or escaped:
+        raise CollectError(f"unterminated quote or escape in Defaults binding: {rest!r}")
+    return rest, ""

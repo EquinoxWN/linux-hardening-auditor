@@ -251,6 +251,10 @@ class SudoersPolicy:
                 parsed.scoped_no_auth
             )
             problems += [f"Defaults !authenticate at {s.where()}" for s in no_auth]
+            problems += [
+                f"!authenticate token not parsed as an entry (flagged to be safe) at {s.where()}"
+                for s in parsed.unparsed_no_auth
+            ]
         for name in self.require_defaults:
             got = parsed.defaults.get(name)
             if got is None or got.value == "!":

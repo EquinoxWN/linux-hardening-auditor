@@ -81,7 +81,9 @@ Host (read-only) <--------------- Check.evaluate(host) <------+
   built-in default used when unset. sudo: `#include`/`@include`, `#includedir`/`@includedir` (relative paths resolve against the
   including file's directory; `%h` is reported as unsupported)
   skipping names with `.` or ending in `~`, last `Defaults` wins, `!` negates, scoped Defaults and
-  aliases are not global (but a scoped `!authenticate` counts as `NOPASSWD`); Defaults items are
+  aliases are not global (but a scoped `!authenticate` counts as `NOPASSWD`; the binding list is
+  split by sudo's grammar, trailing comments are stripped, and any `!authenticate` token the parse
+  misses is flagged to be safe); Defaults items are
   split respecting double quotes and backslash escapes. PAM: bracketed controls, `-` prefixed types, module basename.
 - **Outcomes.** `not_applicable` when the subject is absent (no sshd, no gshadow, no such sysctl);
   `error` when it cannot be read. Exit code: 0 clear, 1 at least one failure, 2 bad input or rules,
