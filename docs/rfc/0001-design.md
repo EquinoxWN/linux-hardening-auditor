@@ -82,7 +82,8 @@ Host (read-only) <--------------- Check.evaluate(host) <------+
   including file's directory; `%h` is reported as unsupported)
   skipping names with `.` or ending in `~`, last `Defaults` wins, `!` negates, scoped Defaults and
   aliases are not global (but a scoped `!authenticate` counts as `NOPASSWD`; the binding list is
-  split by sudo's grammar, trailing comments are stripped, and any `!authenticate` token the parse
+  split by sudo's grammar, trailing comments are stripped (`#` before `-?\d` is a uid, not a
+  comment), `NOPASSWD` is also checked before comment stripping, and any `!authenticate` token the parse
   misses is flagged to be safe); Defaults items are
   split respecting double quotes and backslash escapes. PAM: bracketed controls, `-` prefixed types, module basename.
 - **Outcomes.** `not_applicable` when the subject is absent (no sshd, no gshadow, no such sysctl);

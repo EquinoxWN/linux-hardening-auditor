@@ -127,6 +127,7 @@ class SudoRule:
     text: str
     source: str
     line: int
+    raw: str = ""  # the line before comment stripping, for the fail-safe
 
 
 @dataclass
@@ -231,8 +232,9 @@ def _sudo_file(host: Host, path: str, result: Sudoers, depth: int) -> None:
                     if not _SUDO_DIR_SKIP.search(name):
                         _sudo_file(host, posixpath.join(target, name), result, depth + 1)
             continue
-        if not line or line.startswith("#"):
-            continue
+        if not line or (line.startswith("#") and not _UID_HASH.match(line, 1)):
+            continue  # a comment, unless it is a #uid user spec such as #1000 or #-1
+        raw_line = line
         raw_body = line[len("Defaults") :] if line.startswith("Defaults") else ""
         line = strip_comment(line)
         rest = line[len("Defaults") :]
@@ -253,9 +255,10 @@ def _sudo_file(host: Host, path: str, result: Sudoers, depth: int) -> None:
             continue
         if line.split(None, 1)[0].endswith("_Alias"):
             continue  # aliases are not rules
-        result.rules.append(SudoRule(line, path, number))
+        result.rules.append(SudoRule(line, path, number, raw_line))
 
 
+_UID_HASH = re.compile(r"-?\d")
 _NOT_AUTHENTICATE = re.compile(r"(?<![\w])!\s*authenticate\b")
 
 
@@ -279,7 +282,7 @@ def strip_comment(line: str) -> str:
             escaped = True
         elif ch == '"':
             quoted = not quoted
-        elif ch == "#" and not quoted and after_space and not line[i + 1 : i + 2].isdigit():
+        elif ch == "#" and not quoted and after_space and not _UID_HASH.match(line, i + 1):
             return line[:i].rstrip()
         after_space = ch.isspace() and not quoted
     return line

@@ -52,10 +52,48 @@ def test_split_scope_rejects_an_unterminated_quote() -> None:
         ("Defaults lecture_file=/etc/a\\ #b", "Defaults lecture_file=/etc/a\\ #b"),
         ("Defaults:#1000 !authenticate", "Defaults:#1000 !authenticate"),
         ("alice ALL=(ALL) ALL #note", "alice ALL=(ALL) ALL"),
+        ("alice ALL=(root, #-1) NOPASSWD: ALL", "alice ALL=(root, #-1) NOPASSWD: ALL"),
+        ("alice ALL=(root, #1000) ALL", "alice ALL=(root, #1000) ALL"),
+        ("alice ALL=(ALL) ALL # -1 is not a uid here", "alice ALL=(ALL) ALL"),
     ],
 )
 def test_strip_comment(line: str, kept: str) -> None:
     assert strip_comment(line) == kept
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "alice ALL=(root, #-1) NOPASSWD: ALL\n",
+        "#1000 ALL=(ALL) NOPASSWD: ALL\n",
+        "#-1 ALL=(ALL) NOPASSWD:ALL\n",
+    ],
+)
+def test_uid_hash_is_not_a_comment_so_nopasswd_is_found(text: str) -> None:
+    result = sudoers(FakeHost({"/etc/sudoers": text}))
+    assert result is not None
+    assert len(result.rules) == 1
+    assert "NOPASSWD" in result.rules[0].text
+    out = POLICY.evaluate(FakeHost({"/etc/sudoers": text}))
+    assert out.status is Status.FAIL
+    assert "NOPASSWD at /etc/sudoers:1" in out.evidence
+
+
+def test_a_real_comment_line_is_still_a_comment() -> None:
+    text = "# alice ALL=(ALL) NOPASSWD: ALL\n#includedir-like note\n"
+    result = sudoers(FakeHost({"/etc/sudoers": text}))
+    assert result is not None
+    assert result.rules == []
+    assert POLICY.evaluate(FakeHost({"/etc/sudoers": text})).status is Status.PASS
+
+
+def test_rule_fail_safe_checks_the_text_before_comment_stripping() -> None:
+    text = "alice ALL=(ALL) ALL # NOPASSWD: ALL\n"
+    result = sudoers(FakeHost({"/etc/sudoers": text}))
+    assert result is not None
+    assert "NOPASSWD" not in result.rules[0].text
+    assert "NOPASSWD" in result.rules[0].raw
+    assert POLICY.evaluate(FakeHost({"/etc/sudoers": text})).status is Status.FAIL
 
 
 @pytest.mark.parametrize(

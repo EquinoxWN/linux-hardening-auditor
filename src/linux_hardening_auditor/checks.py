@@ -242,7 +242,8 @@ class SudoersPolicy:
             f"{tag} at {rule.source}:{rule.line}"
             for rule in parsed.rules
             for tag in self.forbid_tags
-            if re.search(rf"(?<![!\w]){re.escape(tag)}\s*:", rule.text)
+            # raw text too: a comment-stripping difference may only add flags
+            if any(re.search(rf"(?<![!\w]){re.escape(tag)}\s*:", t) for t in (rule.text, rule.raw))
         ]
         if "NOPASSWD" in self.forbid_tags:
             # `Defaults !authenticate` has the same effect as NOPASSWD, globally or scoped
