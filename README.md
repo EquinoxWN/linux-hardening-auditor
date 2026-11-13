@@ -16,7 +16,7 @@ machine was never read:
 
 ![lha audit on the weak and hardened fixture hosts](docs/proof/audit.jpg)
 
-152 tests pass locally (parsers, the six check kinds, the host back ends including SSH with a fake
+167 tests pass locally (parsers, the six check kinds, the host back ends including SSH with a fake
 runner, rule validation, end to end on three fixture hosts); lint, strict types and the dependency
 audit are clean. The Rocky fixture shows the traps the parsers handle: a `Match` block that is not
 global and sudo include files that sudo itself would skip:
@@ -63,7 +63,7 @@ What M1 reads, and how:
 | Area | Source | Read the way the daemon reads it |
 |---|---|---|
 | SSH | `/etc/ssh/sshd_config` and its `Include` files | first value wins, `Include` read in place in lexical order, options after `Match` are not global, sshd's default when unset |
-| sudo | `/etc/sudoers`, `#include`/`@include`, `#includedir`/`@includedir` | include-dir files whose name has a `.` or ends in `~` are skipped; last `Defaults` wins; `!` negates |
+| sudo | `/etc/sudoers`, `#include`/`@include`, `#includedir`/`@includedir` | relative include paths resolve against the including file's directory (`%h` is reported as unsupported); include-dir files whose name has a `.` or ends in `~` are skipped; Defaults split respecting quotes and backslashes; last `Defaults` wins; `!` negates; `!authenticate` (global or scoped) counts as `NOPASSWD` |
 | PAM | `common-*` (Debian, Ubuntu) or `system-auth`/`password-auth` (Rocky, RHEL) | bracketed controls, `-type` lines, module basename and arguments |
 | Kernel | `/proc/sys/...` | the running value |
 | Permissions | mode, uid, gid of six sensitive files | any bit beyond the allowed mode fails, including setuid |
@@ -100,7 +100,7 @@ host (batch mode never prompts for a password). `--local` runs on Linux only; ru
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 make setup     # install the package and dev tools
 make lint      # ruff, ruff format, mypy --strict
-make test      # 152 tests (the live test is CI-only)
+make test      # 167 tests (the live test is CI-only)
 make demo      # audit the three fixture hosts
 make audit     # pip-audit
 ```
@@ -142,18 +142,18 @@ Full numbers and commands: [docs/results/m1.md](docs/results/m1.md). The 10-rule
 
 | Check | Result |
 |---|---|
-| Tests (`make test`) | **152 passed** locally, 0 failed; 1 live test runs in CI only (not run yet) |
+| Tests (`make test`) | **167 passed** locally, 0 failed; 1 live test runs in CI only (not run yet) |
 | `hardened` fixture | 29 pass, 0 fail, exit 0 |
 | `weak` fixture | exactly the 21 planted weaknesses fail, 7 pass, 1 not applicable (no gshadow), exit 1 |
 | `rocky` fixture | exactly 4 fail (X11 drop-in, `nullok`, `ip_forward=1`, crontab 0644); the `Match` block and the skipped sudo include files do not cause false failures |
-| Mutation testing | 12 of 12 hand mutants killed |
+| Mutation testing | 12 of 12 hand mutants killed, plus 8 of 8 that put back defects found in a security review |
 | Lint / audit | ruff, mypy `--strict` clean; `pip-audit`: no known vulnerabilities |
 
 | Test file | Tests | What it proves |
 |---|---|---|
-| `test_parsers.py` | 22 | sshd first-value-wins, in-place `Include`, `Match` not global, loops refused, randomised check against a naive model; PAM line parsing; sudo include/includedir rules and Defaults |
-| `test_checks.py` | 56 | the four comparisons; each of the six check kinds passes, fails and is not applicable on the right input; 16 malformed specs rejected |
-| `test_hosts.py` | 39 | path validation; fixture tree reads, manifest and size limits, refusal of links that leave the tree; SSH target validation, quoting, timeouts, bounded retries with backoff, error handling |
+| `test_parsers.py` | 26 | sshd first-value-wins, in-place `Include`, `Match` not global, loops refused, randomised check against a naive model; PAM line parsing; sudo include/includedir rules (relative to the including file, `%h` reported), Defaults split with quotes and escapes |
+| `test_checks.py` | 63 | the four comparisons; each of the six check kinds passes, fails and is not applicable on the right input (`NOPASSWD :` and `Defaults !authenticate`, global or scoped, both fail SUDO-001); 16 malformed specs rejected |
+| `test_hosts.py` | 43 | path validation; fixture tree reads, manifest and size limits, refusal of links that leave the tree; SSH target validation, quoting, timeouts, bounded retries with backoff, error handling; real subprocesses killed on timeout or once output passes the 1 MiB cap |
 | `test_rules.py` | 18 | the 29 bundled rules load; malformed rule files, unsafe YAML tags, duplicates and oversized files rejected |
 | `test_audit.py` | 17 | exact verdicts on three fixture hosts, error findings, exit codes, atomic JSON report, CLI |
 | `test_live.py` | 0 (+1 in CI) | the Ubuntu runner is audited as root with no collection errors |
@@ -210,7 +210,7 @@ paths are tested in CI or with a fake runner, not against a live host on the aut
 
 - Every GitHub Action is pinned to a commit SHA; workflows run read-only, without persisted credentials.
 - Dependabot update pull requests are paused (`open-pull-requests-limit: 0`) so the repository keeps a single `main` branch; dependencies are updated by hand and checked by the CI audit.
-- Rules are loaded with `yaml.safe_load` and a strict schema; rules cannot run commands. SSH targets cannot be read as ssh options, remote paths are validated and shell-quoted, and every remote call has a timeout and bounded retries.
+- Rules are loaded with `yaml.safe_load` and a strict schema; rules cannot run commands. SSH targets cannot be read as ssh options, remote paths are validated and shell-quoted, and every remote call has a timeout and bounded retries; command output is read incrementally and the process is killed once it passes 1 MiB.
 - Report vulnerabilities privately: see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License

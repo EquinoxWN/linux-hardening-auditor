@@ -18,7 +18,8 @@ For SSH there are two practical choices: Paramiko (an in-process SSH library) or
 - `SshHost` runs the system `ssh` with `BatchMode=yes` and `ConnectTimeout`, one command per read
   (`cat`, `stat -c '%a %u %g'`, `ls -1A`, `systemctl list-units`), each behind `test -f/-e/-d` so a
   missing path is exit 3, distinct from a failure. Exit 255 or a timeout is retried with backoff
-  (0.5 s, 1 s, ...), at most 5 retries; any other non-zero exit is an error at once.
+  (0.5 s, 1 s, ...), at most 5 retries; any other non-zero exit is an error at once. Output is read in chunks while the command runs, and
+  the process is killed as soon as stdout or stderr passes 1 MiB.
 - The target is checked against `[user@]host` and placed after `--`, so it cannot be read as an
   ssh option (for example `-oProxyCommand=...`); paths are validated and shell-quoted.
 

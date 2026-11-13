@@ -63,7 +63,8 @@ Host (read-only) <--------------- Check.evaluate(host) <------+
 - **Host interface.** Four read operations: `read_text`, `stat`, `list_dir`,
   `running_services`. Every path is validated (absolute, safe characters, no `..`); the tree host
   refuses anything that resolves outside its root (symlinks and junctions included); files over
-  1 MiB are refused.
+  1 MiB are refused; command output is read incrementally and the process is killed once it
+  passes 1 MiB.
 - **Fixture trees.** A directory stands in for `/`. Windows cannot hold Linux modes, owners or a
   running systemd, so each fixture records them the way they would be captured on a host: a
   `stat -c '%a\t%u\t%g\t%n'` manifest and `systemctl list-units` output. The same parser reads
@@ -77,9 +78,11 @@ Host (read-only) <--------------- Check.evaluate(host) <------+
   [ADR 0003](../adr/0003-declarative-check-kinds.md).
 - **Parsers follow the daemons.** sshd: keywords case-insensitive, first value wins, `Include`
   globs expanded in lexical order and read in place, options after `Match` are not global, sshd's
-  built-in default used when unset. sudo: `#include`/`@include`, `#includedir`/`@includedir`
+  built-in default used when unset. sudo: `#include`/`@include`, `#includedir`/`@includedir` (relative paths resolve against the
+  including file's directory; `%h` is reported as unsupported)
   skipping names with `.` or ending in `~`, last `Defaults` wins, `!` negates, scoped Defaults and
-  aliases are not global. PAM: bracketed controls, `-` prefixed types, module basename.
+  aliases are not global (but a scoped `!authenticate` counts as `NOPASSWD`); Defaults items are
+  split respecting double quotes and backslash escapes. PAM: bracketed controls, `-` prefixed types, module basename.
 - **Outcomes.** `not_applicable` when the subject is absent (no sshd, no gshadow, no such sysctl);
   `error` when it cannot be read. Exit code: 0 clear, 1 at least one failure, 2 bad input or rules,
   3 at least one read error.

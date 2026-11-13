@@ -176,3 +176,58 @@ def test_sudoers_missing_include_is_an_error() -> None:
     host = FakeHost({"/etc/sudoers": "@include /etc/sudoers.gone\n"})
     with pytest.raises(CollectError, match="not found"):
         sudoers(host)
+
+
+def test_sudoers_defaults_split_respects_quotes_and_escapes() -> None:
+    host = FakeHost(
+        {
+            "/etc/sudoers": 'Defaults env_keep="LANG, LC_ALL", use_pty\n'
+            "Defaults badpass_message=wrong\\, try again, logfile=/var/log/sudo.log\n"
+        }
+    )
+    parsed = sudoers(host)
+    assert parsed is not None
+    assert parsed.defaults["env_keep"].value == "LANG, LC_ALL"
+    assert parsed.defaults["use_pty"].value == "on"
+    assert parsed.defaults["badpass_message"].value == "wrong, try again"
+    assert parsed.defaults["logfile"].value == "/var/log/sudo.log"
+    assert " LC_ALL" not in parsed.defaults
+    assert " try again" not in parsed.defaults
+
+
+def test_sudoers_unterminated_quote_is_an_error() -> None:
+    host = FakeHost({"/etc/sudoers": 'Defaults env_keep="LANG, use_pty\n'})
+    with pytest.raises(CollectError, match="unterminated"):
+        sudoers(host)
+
+
+def test_sudoers_relative_include_resolves_against_the_including_file() -> None:
+    host = FakeHost(
+        {
+            "/etc/sudoers": "@include sudoers.d/main\n",
+            "/etc/sudoers.d/main": "@include extra\n#includedir conf\n",
+            "/etc/sudoers.d/extra": "Defaults use_pty\n",
+            "/etc/sudoers.d/conf/ops": "ops ALL=(ALL) ALL\n",
+            "/etc/extra": "Defaults !use_pty\n",
+        }
+    )
+    parsed = sudoers(host)
+    assert parsed is not None
+    assert parsed.files == [
+        "/etc/sudoers",
+        "/etc/sudoers.d/main",
+        "/etc/sudoers.d/extra",
+        "/etc/sudoers.d/conf/ops",
+    ]
+    assert parsed.defaults["use_pty"].value == "on"
+
+
+def test_sudoers_host_name_escape_is_an_error_and_double_percent_is_literal() -> None:
+    host = FakeHost({"/etc/sudoers": "@include /etc/sudoers.d/%h\n"})
+    with pytest.raises(CollectError, match=r"%h \(host name\) in include path is not supported"):
+        sudoers(host)
+    literal = FakeHost(
+        {"/etc/sudoers": "@include /etc/sudoers.d/a%%h\n", "/etc/sudoers.d/a%h": "x ALL=ALL\n"}
+    )
+    with pytest.raises(CollectError, match=r"invalid|safe characters"):
+        sudoers(literal)  # '%' is outside the accepted path characters, reported, not mis-read

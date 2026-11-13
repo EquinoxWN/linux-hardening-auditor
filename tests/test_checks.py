@@ -245,3 +245,35 @@ def test_parse_check_builds_each_kind() -> None:
     assert isinstance(fm, FileMode)
     assert fm.path == "/etc/shadow"
     assert fm.max_mode == 0o640
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["bob ALL=(ALL) NOPASSWD : ALL", "bob ALL=(ALL) NOPASSWD\t:ALL", "bob ALL=(ALL) NOPASSWD:ALL"],
+)
+def test_nopasswd_tag_allows_whitespace_before_the_colon(line: str) -> None:
+    policy = SudoersPolicy(("NOPASSWD",), (), ())
+    out = policy.evaluate(FakeHost({"/etc/sudoers": line + "\n"}))
+    assert out.status is Status.FAIL
+    assert "NOPASSWD at /etc/sudoers:1" in out.evidence
+
+
+@pytest.mark.parametrize(
+    ("text", "where"),
+    [
+        ("Defaults !authenticate\n", "/etc/sudoers:1"),
+        ("Defaults use_pty\nDefaults:deploy !authenticate\n", "/etc/sudoers:2"),
+        ("Defaults!/usr/bin/apt !authenticate\n", "/etc/sudoers:1"),
+    ],
+)
+def test_defaults_not_authenticate_counts_as_nopasswd(text: str, where: str) -> None:
+    policy = SudoersPolicy(("NOPASSWD",), (), ())
+    out = policy.evaluate(FakeHost({"/etc/sudoers": text}))
+    assert out.status is Status.FAIL
+    assert f"Defaults !authenticate at {where}" in out.evidence
+
+
+def test_authenticate_turned_back_on_globally_passes() -> None:
+    policy = SudoersPolicy(("NOPASSWD",), (), ())
+    host = FakeHost({"/etc/sudoers": "Defaults !authenticate\nDefaults authenticate\n"})
+    assert policy.evaluate(host).status is Status.PASS

@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import IO, Protocol
 
 MAX_FILE_BYTES = 1024 * 1024
+CHUNK_BYTES = 64 * 1024
 MAX_PATH_LEN = 4096
 META_DIR = ".lha-meta"
 STAT_MANIFEST = "stat.tsv"
@@ -137,19 +140,74 @@ class CommandResult:
 Runner = Callable[[Sequence[str], float], CommandResult]
 
 
-def run_command(argv: Sequence[str], timeout: float) -> CommandResult:
-    """Run a command without a shell; raises subprocess.TimeoutExpired on timeout."""
-    proc = subprocess.run(  # noqa: S603 - fixed argv, never a shell
+class OutputLimitError(CollectError):
+    """A command wrote more than the output cap and was killed."""
+
+
+def _drain(stream: IO[bytes], limit: int, sink: list[bytes], over: threading.Event) -> None:
+    """Read a pipe in chunks into `sink`, stopping and flagging once `limit` bytes are passed."""
+    total = 0
+    while chunk := os.read(stream.fileno(), CHUNK_BYTES):
+        total += len(chunk)
+        if total > limit:
+            over.set()
+            return
+        sink.append(chunk)
+
+
+def run_command(argv: Sequence[str], timeout: float, limit: int = MAX_FILE_BYTES) -> CommandResult:
+    """Run a command without a shell, reading output incrementally and killing it past `limit`.
+
+    Raises subprocess.TimeoutExpired on timeout and OutputLimitError when stdout or stderr
+    exceeds `limit` bytes.
+    """
+    proc = subprocess.Popen(  # noqa: S603 - fixed argv, never a shell
         list(argv),
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
         stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    return CommandResult(proc.returncode, proc.stdout, proc.stderr)
+    if proc.stdout is None or proc.stderr is None:  # never with PIPE; keeps the types exact
+        proc.kill()
+        raise CollectError(f"{argv[0]}: no output pipes")
+    out: list[bytes] = []
+    err: list[bytes] = []
+    over = threading.Event()
+    readers = [
+        threading.Thread(target=_drain, args=(proc.stdout, limit, out, over), daemon=True),
+        threading.Thread(target=_drain, args=(proc.stderr, limit, err, over), daemon=True),
+    ]
+    for r in readers:
+        r.start()
+    deadline = time.monotonic() + timeout
+    try:
+        while proc.poll() is None and not over.is_set():
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(list(argv), timeout)
+            over.wait(0.02)
+        if over.is_set():
+            raise OutputLimitError(f"{argv[0]}: output over {limit} bytes, process killed")
+        for r in readers:
+            r.join(max(0.0, deadline - time.monotonic()))
+        if any(r.is_alive() for r in readers):
+            raise subprocess.TimeoutExpired(list(argv), timeout)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        for r in readers:
+            r.join(1.0)
+        if not any(r.is_alive() for r in readers):  # a helper process may still hold a pipe
+            proc.stdout.close()
+            proc.stderr.close()
+    if over.is_set():
+        raise OutputLimitError(f"{argv[0]}: output over {limit} bytes, process killed")
+    return CommandResult(proc.returncode, _text(out), _text(err))
+
+
+def _text(parts: list[bytes]) -> str:
+    """Join chunks and decode as UTF-8."""
+    return b"".join(parts).decode("utf-8", errors="replace")
 
 
 class TreeHost:

@@ -136,6 +136,52 @@ class Sudoers:
     defaults: dict[str, Setting] = field(default_factory=dict)
     rules: list[SudoRule] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
+    scoped_no_auth: list[Setting] = field(default_factory=list)
+
+
+def split_defaults(body: str) -> list[tuple[str, bool, str]]:
+    """Split a Defaults body into (name, negated, value), honouring double quotes and backslashes."""
+    items: list[str] = []
+    buf: list[str] = []
+    quoted = escaped = False
+    for ch in body:
+        if escaped:
+            buf.append(ch)
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == '"':
+            quoted = not quoted
+        elif ch == "," and not quoted:
+            items.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    if quoted or escaped:
+        raise CollectError(f"unterminated quote or escape in Defaults: {body!r}")
+    items.append("".join(buf))
+    out: list[tuple[str, bool, str]] = []
+    for item in (i.strip() for i in items):
+        if not item:
+            continue
+        name, _, value = item.partition("=")
+        name = name.strip()
+        negated = name.startswith("!")
+        name = name.lstrip("!").rstrip("+-").strip()
+        out.append((name, negated, value.strip()))
+    return out
+
+
+def _include_target(target: str, including: str) -> str:
+    """Resolve an include path as sudo does: relative to the including file's directory."""
+    if "%h" in target.replace("%%", ""):
+        raise CollectError(
+            f"{including}: %h (host name) in include path is not supported: {target}"
+        )
+    target = target.replace("%%", "%")
+    if not target.startswith("/"):
+        target = posixpath.join(posixpath.dirname(including), target)
+    return target
 
 
 _INCLUDE = re.compile(r"^[#@](include|includedir)\s+(\S+)\s*$")
@@ -176,7 +222,7 @@ def _sudo_file(host: Host, path: str, result: Sudoers, depth: int) -> None:
         inc = _INCLUDE.match(line)
         if inc:
             kind, target = inc.groups()
-            target = target if target.startswith("/") else posixpath.join("/etc", target)
+            target = _include_target(target, path)
             if kind == "include":
                 _sudo_file(host, target, result, depth + 1)
             else:
@@ -188,18 +234,16 @@ def _sudo_file(host: Host, path: str, result: Sudoers, depth: int) -> None:
             continue
         head = line.split(None, 1)
         if head[0] == "Defaults":
-            body = head[1] if len(head) > 1 else ""
-            for item in (i.strip() for i in body.split(",")):
-                if not item:
-                    continue
-                name, _, value = item.partition("=")
-                name = name.strip()
-                negated = name.startswith("!")
-                name = name.lstrip("!").rstrip("+-").strip()
-                result.defaults[name] = Setting(
-                    "!" if negated else (value.strip().strip('"') or "on"), path, number
-                )
+            for name, negated, value in split_defaults(head[1] if len(head) > 1 else ""):
+                result.defaults[name] = Setting("!" if negated else (value or "on"), path, number)
             continue
-        if head[0].startswith("Defaults") or head[0].endswith("_Alias"):
-            continue  # scoped Defaults and aliases are not global settings
+        if head[0].startswith("Defaults"):
+            # scoped Defaults (Defaults:user, @host, >runas, !cmnd) are not global settings,
+            # but a scoped !authenticate still lets those users skip the password
+            for name, negated, _ in split_defaults(head[1] if len(head) > 1 else ""):
+                if name == "authenticate" and negated:
+                    result.scoped_no_auth.append(Setting("!", path, number))
+            continue
+        if head[0].endswith("_Alias"):
+            continue  # aliases are not rules
         result.rules.append(SudoRule(line, path, number))

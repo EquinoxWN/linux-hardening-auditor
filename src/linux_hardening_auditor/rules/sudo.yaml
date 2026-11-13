@@ -1,13 +1,16 @@
 # sudo controls. sudoers is read in sudo's order with include and includedir; files in an
-# includedir whose name contains a dot or ends in ~ are skipped, as sudo skips them.
+# includedir whose name contains a dot or ends in ~ are skipped, as sudo skips them; relative
+# include paths resolve against the including file's directory.
 rules:
   - id: SUDO-001
-    title: No sudo rule skips the password (NOPASSWD)
+    title: No sudo rule skips the password (NOPASSWD or Defaults !authenticate)
     severity: high
     rationale: >
       NOPASSWD turns any code running as that user, such as a compromised service or a stolen
       session, into root without a second check.
-    fix: Remove the NOPASSWD tag, or limit it to the exact commands an automation needs.
+    fix: >
+      Remove the NOPASSWD tag and any Defaults !authenticate (global or scoped), or limit them
+      to the exact commands an automation needs.
     check:
       kind: sudoers
       forbid_tags: [NOPASSWD]

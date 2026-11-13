@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -15,11 +16,13 @@ from linux_hardening_auditor.hosts import (
     CollectError,
     CommandResult,
     FileStat,
+    OutputLimitError,
     SshHost,
     TreeHost,
     check_path,
     parse_stat_manifest,
     parse_units,
+    run_command,
 )
 
 
@@ -269,3 +272,38 @@ def test_ssh_cannot_start_client() -> None:
 def test_shipped_fixtures_load() -> None:
     for name in ("hardened", "weak", "rocky"):
         assert TreeHost.fixture(FIXTURES / name).read_text("/etc/passwd")
+
+
+def _py(code: str) -> list[str]:
+    return [sys.executable, "-I", "-c", code]
+
+
+def test_run_command_returns_exit_code_stdout_and_stderr() -> None:
+    result = run_command(
+        _py("import sys; print('out'); print('err', file=sys.stderr); sys.exit(4)"), 30
+    )
+    assert result.returncode == 4
+    assert result.stdout.strip() == "out"
+    assert result.stderr.strip() == "err"
+
+
+def test_run_command_kills_a_process_once_output_passes_the_cap() -> None:
+    endless = _py("import sys\nwhile True: sys.stdout.buffer.write(b'x' * 65536)")
+    t0 = time.monotonic()
+    with pytest.raises(OutputLimitError, match="output over 200000 bytes"):
+        run_command(endless, 20, limit=200_000)
+    assert time.monotonic() - t0 < 10
+
+
+def test_run_command_output_at_the_cap_is_kept() -> None:
+    result = run_command(
+        _py("import sys; sys.stdout.buffer.write(b'y' * 100000)"), 30, limit=100_000
+    )
+    assert len(result.stdout) == 100_000
+
+
+def test_run_command_times_out_and_kills() -> None:
+    t0 = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_command(_py("import time; time.sleep(30)"), 0.5)
+    assert time.monotonic() - t0 < 10

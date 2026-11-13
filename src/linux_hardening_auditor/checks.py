@@ -242,8 +242,15 @@ class SudoersPolicy:
             f"{tag} at {rule.source}:{rule.line}"
             for rule in parsed.rules
             for tag in self.forbid_tags
-            if re.search(rf"(?<![!\w]){re.escape(tag)}:", rule.text)
+            if re.search(rf"(?<![!\w]){re.escape(tag)}\s*:", rule.text)
         ]
+        if "NOPASSWD" in self.forbid_tags:
+            # `Defaults !authenticate` has the same effect as NOPASSWD, globally or scoped
+            auth = parsed.defaults.get("authenticate")
+            no_auth = ([auth] if auth is not None and auth.value == "!" else []) + list(
+                parsed.scoped_no_auth
+            )
+            problems += [f"Defaults !authenticate at {s.where()}" for s in no_auth]
         for name in self.require_defaults:
             got = parsed.defaults.get(name)
             if got is None or got.value == "!":
